@@ -1,0 +1,4 @@
+data/*
+!data/.htaccess
+!data/index.php
+.DS_Store

@@ -1,0 +1,46 @@
+# YT Connector — Apache / LiteSpeed (Hostinger) configuration
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Pass the Authorization header to PHP (needed for the MCP bearer token)
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Block private folders
+  RewriteRule ^(lib|data)(/|$) - [F,L]
+  RewriteRule ^\.git - [F,L]
+
+  # OAuth discovery (RFC 8414 / RFC 9728)
+  RewriteRule ^\.well-known/oauth-authorization-server(/.*)?$ well-known.php?type=as [L,QSA]
+  RewriteRule ^\.well-known/openid-configuration(/.*)?$ well-known.php?type=as [L,QSA]
+  RewriteRule ^\.well-known/oauth-protected-resource(/.*)?$ well-known.php?type=pr [L,QSA]
+
+  # Pretty endpoints
+  RewriteRule ^mcp/?$ mcp.php [L,QSA]
+  RewriteRule ^(authorize|token|register)/?$ $1.php [L,QSA]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
+
+<FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm|log|bin|thumb|md)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Larger uploads from the dashboard (ignored where not allowed)
+<IfModule mod_php.c>
+  php_value upload_max_filesize 64M
+  php_value post_max_size 70M
+  php_value max_execution_time 300
+</IfModule>
