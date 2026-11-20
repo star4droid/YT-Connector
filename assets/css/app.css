@@ -598,3 +598,8 @@ input[type=file] { padding: 8px; font-size: 13px; }
 
 /* mixed-direction text (English messages inside the Arabic UI) */
 .alert > div, .bidi, .act .a-main > .muted, .toast > div, .comment .ctext, .vtitle { unicode-bidi: plaintext; }
+.badge.info { color: var(--ai-2); background: var(--info-soft); }
+.seg.fit { overflow-x: auto; scrollbar-width: none; }
+.seg.fit::-webkit-scrollbar { display: none; }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 46%), 1fr)); gap: 12px; }
+.media-grid .vbody { padding: 10px 12px 12px; }

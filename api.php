@@ -224,7 +224,7 @@ try {
                     'last_used' => (int)$c['last_used'],
                 ], $clients),
                 'sessions' => array_map(fn($f) => $f + ['client_name' => $names[$f['client_id']] ?? $f['client_id']], $fams),
-                'tools' => array_map(fn($t) => ['name' => $t['name'], 'title' => $t['title'], 'description' => $t['description'], 'access' => $t['access'], 'read_only' => $t['readOnly'], 'destructive' => $t['destructive'] ?? false], tools_catalog()),
+                'tools' => array_map(fn($t) => ['name' => $t['name'], 'title' => $t['title'], 'description' => $t['description'], 'access' => $t['access'], 'read_only' => $t['readOnly'], 'destructive' => $t['destructive'] ?? false], tools_enabled()),
             ]);
 
         case 'client.create':
@@ -274,6 +274,28 @@ try {
             $_SESSION['admin_ver'] = $ver; // keep this session, log out others
             log_activity('web', 'password_changed');
             json_out(['ok' => true]);
+
+        /* ---------------- media sources ---------------- */
+        case 'media.settings':
+            json_out(media_settings_public());
+
+        case 'media.save':
+            if (isset($in['pixabay_enabled'])) setting_set('src_pixabay', $in['pixabay_enabled'] ? '1' : '0');
+            if (isset($in['wikimedia_enabled'])) setting_set('src_wikimedia', $in['wikimedia_enabled'] ? '1' : '0');
+            if (isset($in['pixabay_safesearch'])) setting_set('pixabay_safesearch', $in['pixabay_safesearch'] ? '1' : '0');
+            if (!empty($in['remove_pixabay_key'])) setting_set('pixabay_key_enc', '');
+            if (!empty($in['pixabay_key'])) {
+                $key = trim((string)$in['pixabay_key']);
+                pixabay_search(['query' => 'nature', 'per_page' => 3], $key); // throws if the key is invalid
+                setting_set('pixabay_key_enc', encrypt_str($key));
+                log_activity('web', 'pixabay_key_saved');
+            }
+            json_out(media_settings_public());
+
+        case 'media.search':
+            $src = (string)($in['source'] ?? 'pixabay');
+            $args = is_array($in['args'] ?? null) ? $in['args'] : [];
+            json_out(['result' => $src === 'wikimedia' ? wikimedia_search($args) : pixabay_search($args)]);
 
         /* ---------------- activity ---------------- */
         case 'activity':

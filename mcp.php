@@ -68,6 +68,7 @@ YT Connector lets you fully manage the user's YouTube channels.
 • Uploading: if YOU have the video file (attached to the chat or created in your sandbox), call upload_file_start, then send the raw bytes with curl to the returned put_url (or, for tiny files, base64 via upload_file_chunk); the server pushes it to YouTube and deletes its copy right after. If the user has the file on their device, call create_upload_link and give them the link. For a public direct link use upload_video with source_url. Then poll upload_status until "done".
 • Analytics: analytics_summary for ready-made reports, query_analytics for custom questions. Data lags ~2 days.
 • Comments, playlists, captions and channel branding are also available.
+• Stock media: pixabay_search (photos, illustrations, vectors, video clips — royalty free) and wikimedia_search (freely licensed real-world images/videos, credit the author). Each returns URLs plus a numbered preview grid; use preview_image to inspect one. Pass a chosen URL to set_thumbnail (image_url) or upload_video (source_url).
 • AI Notebook (notebook_write / notebook_read): a journal shown in the dashboard. When the user asks for daily/weekly summaries, reports or to log your work, write entries there (Markdown body + optional metrics/charts). Read previous entries first to stay consistent.
 • Default new uploads to private unless the user says otherwise. Respect the 100-char title and 5000-char description limits. Quota is limited (10,000 units/day by default); search costs 100 units, so prefer list_videos.
 TXT;
@@ -105,7 +106,7 @@ function mcp_handle(array $m, array $auth, ?string &$sessionHeader): ?array
             return $ok(new stdClass());
         case 'tools/list':
             $list = [];
-            foreach (tools_catalog() as $t) {
+            foreach (tools_enabled() as $t) {
                 $list[] = [
                     'name' => $t['name'],
                     'title' => $t['title'],

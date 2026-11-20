@@ -202,6 +202,7 @@ function db_migrate(): void
             created_at $int
         )",
         "login_attempts (id $pk, ip $str, created_at $int)",
+        "cache (k $str PRIMARY KEY, v $txt, expires $int)",
     ];
     foreach ($tables as $t) {
         db()->exec('CREATE TABLE IF NOT EXISTS ' . $t . $tail);

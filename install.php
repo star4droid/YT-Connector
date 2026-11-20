@@ -45,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $allOk) {
             setting_set('base_url', $url);
             setting_set('allow_dcr', '1');
             setting_set('access_token_ttl', '86400');
+            setting_set('schema_version', SCHEMA_VERSION);
             if (!is_dir(STAGING_DIR)) @mkdir(STAGING_DIR, 0775, true);
             app_start_session();
             session_regenerate_id(true);

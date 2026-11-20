@@ -169,6 +169,7 @@ const NAV = [
   ['channels', 'youtube', 'nav_channels'],
   ['upload', 'upload', 'nav_upload'],
   ['notebook', 'book', 'nav_notebook'],
+  ['media', 'image', 'nav_media'],
   ['connector', 'zap', 'nav_connector'],
   ['activity', 'activity', 'nav_activity'],
   ['settings', 'settings', 'nav_settings'],
@@ -208,7 +209,7 @@ function renderNav() {
     <a href="#/channels" class="${isActive('channels') ? 'active' : ''}">${ic('youtube')}<span>${t('nav_channels')}</span></a>
     <a href="#/upload" aria-label="${t('upload')}"><span class="fab">${ic('plus')}</span></a>
     <a href="#/notebook" class="${isActive('notebook') ? 'active' : ''}">${ic('book')}<span>${t('nb_short')}</span></a>
-    <button type="button" id="bbMore" class="${['connector', 'activity', 'settings'].includes(cur) ? 'active' : ''}">${ic('menu')}<span>${t('more')}</span></button>`;
+    <button type="button" id="bbMore" class="${['media', 'connector', 'activity', 'settings'].includes(cur) ? 'active' : ''}">${ic('menu')}<span>${t('more')}</span></button>`;
   $('#bbMore').onclick = openNav;
   $$('[data-t]').forEach(e => e.textContent = t(e.dataset.t));
   paintChrome();
@@ -234,7 +235,7 @@ async function refreshBoot() {
 /* ---------------- router ---------------- */
 const routes = {
   overview: vOverview, welcome: vWelcome, channels: vChannels, channel: vChannel, video: vVideo,
-  upload: vUpload, notebook: vNotebook, connector: vConnector, activity: vActivity, settings: vSettings,
+  upload: vUpload, notebook: vNotebook, media: vMedia, connector: vConnector, activity: vActivity, settings: vSettings,
 };
 let routeToken = 0;
 async function route() {
@@ -1014,6 +1015,108 @@ function noteModal(n, done) {
     f.pinned = !!m.$('[name=pinned]').checked;
     if (n) f.id = n.id;
     try { await api('note.save', f); m.close(); toast(t('saved')); done(); } catch (er) { toast(er.message, 'err'); }
+  });
+}
+
+/* ---------- Media sources (Pixabay / Wikimedia) ---------- */
+async function vMedia() {
+  crumbs([t('nav_media')]);
+  if (!S.boot) await refreshBoot();
+  const ms = await api('media.settings');
+  const sw = (id, on) => `<span class="switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><i></i></span>`;
+  view.innerHTML = `
+    <div class="page-head"><div><h1>${t('nav_media')}</h1><div class="sub">${t('media_sub')}</div></div></div>
+    ${!ms.gd ? alertBox('warn', t('media_no_gd')) : ''}
+    <div class="grid g2" style="align-items:start">
+      <div class="card">
+        <div class="card-head"><span class="ibox ok">${ic('image')}</span><h3>Pixabay</h3>${ms.pixabay.has_key ? `<span class="badge ok">${ic('check')}${t('media_key_ok')}</span>` : `<span class="badge warn">${ic('key')}${t('media_no_key')}</span>`}</div>
+        <p class="muted small">${t('pixabay_d')}</p>
+        <div class="stack" style="gap:12px">
+          <label class="toggle-row"><span>${t('media_enable')}</span>${sw('pxOn', ms.pixabay.enabled)}</label>
+          <label class="toggle-row"><span>${t('safesearch')}</span>${sw('pxSafe', ms.pixabay.safesearch)}</label>
+          <form class="field" id="pxForm"><span>API key ${ms.pixabay.key_hint ? `<span class="badge ltr">${h(ms.pixabay.key_hint)}</span>` : ''}</span>
+            <div class="row nowrap"><input type="password" name="key" dir="ltr" autocomplete="off" placeholder="${ms.pixabay.has_key ? t('keep_current') : '12345678-abcdef0123456789…'}"><button class="btn primary">${ic('save', 'sm')}${t('save')}</button></div>
+            <small>${t('pixabay_key_hint')}</small></form>
+          ${ms.pixabay.has_key ? `<div><button class="btn sm danger" id="pxDel">${ic('trash', 'sm')}${t('remove_key')}</button></div>` : ''}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="ibox info">${ic('globe')}</span><h3>Wikimedia Commons</h3><span class="badge ok">${ic('check')}${t('no_key_needed')}</span></div>
+        <p class="muted small">${t('wikimedia_d')}</p>
+        <label class="toggle-row"><span>${t('media_enable')}</span>${sw('wmOn', ms.wikimedia.enabled)}</label>
+        <div class="card-head mt"><h3>${ic('bot')}${t('ask_claude')}</h3></div>
+        <div class="prompt-list">${['mp1', 'mp2', 'mp3'].map(k => `<button class="prompt" data-copy="${h(t(k))}">${ic('message')}<span>${t(k)}</span></button>`).join('')}</div>
+      </div>
+    </div>
+    <div class="card mt">
+      <div class="card-head"><h3>${ic('search')}${t('media_try')}</h3></div>
+      <form class="toolbar" id="msForm">
+        <div class="seg fit" id="msSrc">
+          <button type="button" data-src="px_image" class="on">${ic('image', 'sm')}${t('px_images')}</button>
+          <button type="button" data-src="px_video">${ic('film', 'sm')}${t('px_videos')}</button>
+          <button type="button" data-src="wm">${ic('globe', 'sm')}Wikimedia</button>
+        </div>
+        <div class="input-icon">${ic('search')}<input type="search" name="q" placeholder="${t('media_q_ph')}" required></div>
+        <select name="opt" id="msOpt" style="flex:0 1 180px"></select>
+        <button class="btn primary">${t('search_btn')}</button>
+      </form>
+      <div id="msRes"><div class="empty">${t('media_try_d')}</div></div>
+    </div>`;
+  const save = async (data) => { try { await api('media.save', data); toast(t('saved')); } catch (e) { toast(e.message, 'err'); route(); } };
+  $('#pxOn').onchange = e => save({ pixabay_enabled: e.target.checked });
+  $('#pxSafe').onchange = e => save({ pixabay_safesearch: e.target.checked });
+  $('#wmOn').onchange = e => save({ wikimedia_enabled: e.target.checked });
+  $('#pxForm').onsubmit = (e) => {
+    e.preventDefault();
+    const key = e.target.key.value.trim(); if (!key) return;
+    busy($('button', e.target), async () => { try { await api('media.save', { pixabay_key: key }); toast(t('media_key_saved')); route(); } catch (er) { toast(er.message, 'err'); } });
+  };
+  $('#pxDel') && ($('#pxDel').onclick = async () => { if (await confirmDlg(t('remove_key'), t('remove_key_q'))) { await api('media.save', { remove_pixabay_key: 1 }); route(); } });
+
+  let src = 'px_image', results = [];
+  const opts = {
+    px_image: [['', t('any_orientation')], ['horizontal', t('horizontal')], ['vertical', t('vertical')]],
+    px_video: [['', t('all')], ['film', t('film')], ['animation', t('animation')]],
+    wm: [['all', t('any_license')], ['no_restrictions', t('pd_only')]],
+  };
+  const fillOpts = () => { $('#msOpt').innerHTML = opts[src].map(([v, l]) => `<option value="${v}">${l}</option>`).join(''); };
+  fillOpts();
+  $$('#msSrc [data-src]').forEach(b => b.onclick = () => { src = b.dataset.src; $$('#msSrc [data-src]').forEach(x => x.classList.toggle('on', x === b)); fillOpts(); });
+  const box = $('#msRes');
+  $('#msForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const q = e.target.q.value.trim(), opt = $('#msOpt').value;
+    const args = src === 'wm' ? { query: q, limit: 24, license: opt } : { query: q, per_page: 24, type: src === 'px_video' ? 'video' : 'image', ...(src === 'px_video' ? { video_type: opt } : { orientation: opt }) };
+    box.innerHTML = `<div class="video-grid">${'<div class="skeleton" style="aspect-ratio:4/3"></div>'.repeat(8)}</div>`;
+    try {
+      const r = (await api('media.search', { source: src === 'wm' ? 'wikimedia' : 'pixabay', args })).result;
+      results = r.results;
+      if (!results.length) { box.innerHTML = empty('search', t('no_results')); return; }
+      box.innerHTML = `<div class="muted small" style="margin-bottom:10px">${r.total != null ? full(r.total) + ' · ' : ''}${t('media_source')}: <b>${r.source === 'wikimedia' ? 'Wikimedia Commons' : 'Pixabay'}</b></div>
+        <div class="media-grid">${results.map((x, i) => `<div class="vcard" data-i="${i}"><div class="vthumb"><img src="${h(x.thumbnail || x.preview_url || '')}" alt="" loading="lazy" referrerpolicy="no-referrer">${x.duration ? `<span class="badge dark dur">${dur(Math.round(x.duration))}</span>` : ''}<span class="priv"><span class="badge dark">${i + 1}</span></span></div>
+          <div class="vbody"><div class="vtitle" style="min-height:0;-webkit-line-clamp:1">${h(x.title || x.tags || '')}</div><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(x.author || x.user || '')}${x.license && x.source === 'wikimedia' ? ' · ' + h(x.license) : ''}</div>
+          ${x.width ? `<div class="vstats"><span>${x.width}×${x.height}</span></div>` : ''}</div></div>`).join('')}</div>`;
+      $$('[data-i]', box).forEach(el => el.onclick = () => mediaModal(results[Number(el.dataset.i)]));
+    } catch (er) { box.innerHTML = errBox(er); }
+  };
+}
+function mediaModal(x) {
+  const isVideo = !!x.videos || /video/.test(x.mime || '');
+  const urls = [];
+  if (x.videos) Object.entries(x.videos).forEach(([k, v]) => urls.push([`${k} · ${v.width}×${v.height}`, v.url]));
+  else if (x.source === 'pixabay') [['web 640', x.web_url], ['large 1280', x.large_url], ['full HD', x.full_hd_url]].forEach(([l, u]) => u && urls.push([l, u]));
+  else { urls.push([t('original') + (x.width ? ` · ${x.width}×${x.height}` : ''), x.url]); if (x.best_url && x.best_url !== x.url) urls.push(['1920px', x.best_url]); }
+  modal({
+    title: h(x.title || x.tags || 'Media'), icon: isVideo ? 'film' : 'image', wide: true,
+    body: `<div class="grid g2" style="align-items:start">
+      <div>${isVideo ? `<video src="${h(x.best_url || x.url)}" controls playsinline style="width:100%;border-radius:12px;background:#000" poster="${h(x.thumbnail || '')}"></video>` : `<img src="${h(x.large_url || x.best_url || x.thumbnail)}" alt="" style="width:100%;border-radius:12px;display:block" referrerpolicy="no-referrer">`}</div>
+      <div class="stack" style="gap:12px">
+        <div class="row gap-s"><span class="badge ${x.source === 'wikimedia' ? 'info' : 'ok'}">${x.source === 'wikimedia' ? 'Wikimedia Commons' : 'Pixabay'}</span>${x.license ? `<span class="badge">${h(x.license.length > 40 ? x.license.slice(0, 40) + '…' : x.license)}</span>` : ''}${x.duration ? `<span class="badge">${dur(Math.round(x.duration))}</span>` : ''}</div>
+        ${x.description ? `<p class="muted small" style="margin:0">${h(x.description)}</p>` : ''}
+        <div class="field"><span>${t('attribution')}</span>${copyField(x.attribution)}</div>
+        ${urls.map(([l, u]) => `<div class="field"><span>${h(l)}</span>${copyField(u)}</div>`).join('')}
+        ${x.page_url ? `<a class="btn sm" target="_blank" rel="noopener" href="${h(x.page_url)}">${ic('external', 'sm')}${t('open_source_page')}</a>` : ''}
+      </div></div>`,
   });
 }
 

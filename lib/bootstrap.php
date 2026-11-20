@@ -11,6 +11,7 @@ define('ROOT_DIR', dirname(__DIR__));
 define('DATA_DIR', ROOT_DIR . '/data');
 define('CONFIG_FILE', DATA_DIR . '/config.php');
 define('STAGING_DIR', DATA_DIR . '/staging');
+define('SCHEMA_VERSION', '2');
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
@@ -24,6 +25,7 @@ require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/youtube.php';
 require_once __DIR__ . '/uploads.php';
 require_once __DIR__ . '/notebook.php';
+require_once __DIR__ . '/media.php';
 
 function is_installed(): bool
 {
@@ -168,3 +170,20 @@ function log_activity(string $source, string $action, ?int $channelId = null, $d
         error_log('activity log failed: ' . $e->getMessage());
     }
 }
+
+/** Runs schema updates automatically after the files are upgraded. */
+function maybe_migrate(): void
+{
+    static $done = false;
+    if ($done || !is_installed()) return;
+    $done = true;
+    try {
+        if ((string)setting('schema_version', '1') !== SCHEMA_VERSION) {
+            db_migrate();
+            setting_set('schema_version', SCHEMA_VERSION);
+        }
+    } catch (Throwable $e) {
+        error_log('migration failed: ' . $e->getMessage());
+    }
+}
+maybe_migrate();

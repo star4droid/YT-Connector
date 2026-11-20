@@ -665,6 +665,71 @@ function tools_catalog(): array
             },
         ],
 
+        /* ---------- stock media ---------- */
+        [
+            'name' => 'pixabay_search', 'title' => 'Search Pixabay images & videos', 'access' => 'none', 'readOnly' => true,
+            'enabled' => fn() => media_source_enabled('pixabay') && pixabay_key(),
+            'description' => 'Searches Pixabay for royalty-free photos, illustrations, vectors (type=image) or video clips (type=video) to use in thumbnails, B-roll, Shorts or intros. Returns URLs in several sizes (image: preview/web/large; video: tiny/small/medium/large with width, height, bytes), tags, author and a numbered preview grid so you can see the results. Use a result\'s best_url with set_thumbnail (image_url) or upload_video (source_url), or download it in your sandbox. Free to use without attribution, but mention that the media comes from Pixabay.',
+            'schema' => S_obj([
+                'query' => S_str('Search words (max 100 chars). English works best, or set lang.'),
+                'type' => S_str('image (default) or video.', ['enum' => ['image', 'video']]),
+                'image_type' => S_str('Images only: all | photo | illustration | vector.', ['enum' => ['all', 'photo', 'illustration', 'vector']]),
+                'video_type' => S_str('Videos only: all | film | animation.', ['enum' => ['all', 'film', 'animation']]),
+                'orientation' => S_str('Images only: all | horizontal | vertical (vertical = Shorts).', ['enum' => ['all', 'horizontal', 'vertical']]),
+                'category' => S_str('Optional category.', ['enum' => PIXABAY_IMAGE_CATEGORIES]),
+                'colors' => S_str('Images only, comma separated: grayscale, transparent, red, orange, yellow, green, turquoise, blue, lilac, pink, white, gray, black, brown.'),
+                'min_width' => S_int('Minimum width in px (e.g. 1280 for thumbnails, 1920 for HD video).'),
+                'min_height' => S_int('Minimum height in px.'),
+                'editors_choice' => S_bool('Only Editor\'s Choice awards.'),
+                'order' => S_str('popular (default) or latest.', ['enum' => ['popular', 'latest']]),
+                'lang' => S_str('Query language code (en default; also de, fr, es, tr, ru, ja, ko, zh…). Arabic is not supported — translate the query to English.'),
+                'per_page' => S_int('3-50 results (default 12).'),
+                'page' => S_int('Page number.'),
+                'include_preview' => S_bool('Return a numbered preview grid image (default true).'),
+            ], ['query']),
+            'run' => function ($a, $ctx) {
+                $a['per_page'] = min(50, max(3, (int)($a['per_page'] ?? 12)));
+                $res = pixabay_search($a);
+                return media_result_content($res, ($a['include_preview'] ?? true) !== false && empty($ctx['admin']));
+            },
+        ],
+        [
+            'name' => 'wikimedia_search', 'title' => 'Search Wikimedia Commons', 'access' => 'none', 'readOnly' => true,
+            'enabled' => fn() => media_source_enabled('wikimedia'),
+            'description' => 'Searches Wikimedia Commons (no API key) for freely licensed images, videos or audio — great for real places, people, historical events, logos of public institutions, maps and diagrams. Returns file URL, thumbnail, size, author, license and a ready attribution line, plus a numbered preview grid. Set license=no_restrictions for public domain / CC0 only. Always credit the author unless public domain.',
+            'schema' => S_obj([
+                'query' => S_str('Search terms, e.g. "eiffel tower night".'),
+                'media_type' => S_str('image (default) | video | audio.', ['enum' => ['image', 'video', 'audio']]),
+                'license' => S_str('all (default) or no_restrictions (public domain / CC0 only).', ['enum' => ['all', 'no_restrictions']]),
+                'limit' => S_int('Max results, default 9, max 50.'),
+                'offset' => S_int('Skip results (pagination; use next_offset).'),
+                'thumb_width' => S_int('Thumbnail width in px, default 400.'),
+                'include_thumbnails' => S_bool('Return a numbered preview grid image (default true).'),
+            ], ['query']),
+            'run' => function ($a, $ctx) {
+                $res = wikimedia_search($a);
+                return media_result_content($res, ($a['include_thumbnails'] ?? true) !== false && empty($ctx['admin']));
+            },
+        ],
+        [
+            'name' => 'preview_image', 'title' => 'View an image', 'access' => 'none', 'readOnly' => true,
+            'description' => 'Fetches one image (from Pixabay, Wikimedia, YouTube thumbnails) and returns it so you can look at it closely before using it — e.g. to check a thumbnail candidate.',
+            'schema' => S_obj(['url' => S_str('Image URL (pixabay.com, wikimedia.org, ytimg.com).')], ['url']),
+            'run' => function ($a, $ctx) {
+                $url = (string)($a['url'] ?? '');
+                if (!media_preview_allowed($url)) throw new UserError('Only https images from pixabay.com, wikimedia.org or YouTube can be previewed.');
+                $r = http_request('GET', $url, ['follow' => true, 'timeout' => 30, 'headers' => ['User-Agent: ' . MEDIA_UA]]);
+                if ($r['status'] !== 200) throw new UserError('Could not fetch image (HTTP ' . $r['status'] . ').');
+                if (strlen($r['body']) > 4 * 1024 * 1024) throw new UserError('Image too large to preview (> 4 MB). Use a smaller size URL.');
+                $mime = YouTube::sniffImage($r['body']) ?: (substr($r['body'], 8, 4) === 'WEBP' ? 'image/webp' : null);
+                if (!$mime) throw new UserError('Not a supported image.');
+                return ['__content' => [
+                    ['type' => 'text', 'text' => $url . ' (' . round(strlen($r['body']) / 1024) . ' KB)'],
+                    ['type' => 'image', 'data' => base64_encode($r['body']), 'mimeType' => $mime],
+                ]];
+            },
+        ],
+
         /* ---------- AI notebook ---------- */
         [
             'name' => 'notebook_write', 'title' => 'Write to AI Notebook', 'access' => 'none', 'readOnly' => false,
@@ -784,4 +849,26 @@ function upload_meta_from(array $a): array
         if (isset($a[$k]) && $a[$k] !== '') $meta[$k] = $a[$k];
     }
     return $meta;
+}
+
+/** Tools that are currently switched on (media sources can be disabled in the dashboard). */
+function tools_enabled(): array
+{
+    return array_values(array_filter(tools_catalog(), function ($t) {
+        if (!isset($t['enabled'])) return true;
+        try { return (bool)($t['enabled'])(); } catch (Throwable $e) { return false; }
+    }));
+}
+
+/** Wraps a media search result as MCP content: JSON text + optional numbered preview grid. */
+function media_result_content(array $res, bool $withPreview): array
+{
+    if (!$withPreview || empty($res['results'])) return $res;
+    $thumbs = array_map(fn($r) => $r['thumbnail'] ?? ($r['preview_url'] ?? null), $res['results']);
+    $jpg = null;
+    try { $jpg = media_composite($thumbs); } catch (Throwable $e) { $jpg = null; }
+    $res['preview'] = $jpg ? 'The image below shows the results numbered 1..' . count($thumbs) . ' in the same order as "results".' : 'Preview grid unavailable (PHP GD extension missing) — use preview_image to view one result.';
+    $content = [['type' => 'text', 'text' => json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)]];
+    if ($jpg) $content[] = ['type' => 'image', 'data' => base64_encode($jpg), 'mimeType' => 'image/jpeg'];
+    return ['__content' => $content];
 }

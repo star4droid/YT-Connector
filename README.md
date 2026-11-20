@@ -10,6 +10,7 @@ Install it on any PHP hosting (Hostinger, cPanel, any VPS), connect one or more 
 - 👀 **Video analysis**: the AI sees the thumbnail plus 3 frames captured from the video, reads the transcript, and gets the stats and retention curve
 - 📈 **Analytics**: ready-made summaries (traffic sources, countries, devices, audience, top videos) and custom YouTube Analytics queries
 - 💬 **Comments, playlists, captions, channel branding**: full read and write access
+- 🖼 **Stock media for the AI**: search Pixabay (royalty-free photos, illustrations, vectors and video clips, needs a free API key) and Wikimedia Commons (no key) for thumbnails, B-roll and backgrounds. Results come with a numbered preview grid the AI can look at.
 - 📓 **AI Notebook**: a journal in the dashboard where the AI keeps daily or weekly summaries, insights, plans and logs, with KPI tiles and charts
 - 🖥 **Dashboard**: a responsive interface in Arabic and English with dark and light themes, including a video editor, resumable uploads, analytics charts and an activity log
 - 🔐 **Security**: Google secrets are encrypted at rest (AES-256-GCM), tokens are hashed, the admin login is rate-limited, sessions can be revoked, and private folders are blocked
@@ -36,7 +37,7 @@ Install it on any PHP hosting (Hostinger, cPanel, any VPS), connect one or more 
 
 | | |
 |---|---|
-| PHP | 8.0 or newer, with `curl`, `openssl`, `pdo_sqlite` (or `pdo_mysql`), `mbstring` |
+| PHP | 8.0 or newer, with `curl`, `openssl`, `pdo_sqlite` (or `pdo_mysql`), `mbstring`; `gd` recommended (media preview grids) |
 | Web server | Apache or LiteSpeed with `.htaccess` (Hostinger works out of the box). Nginx also works if you port the rewrite rules. |
 | HTTPS | **Required** by Claude connectors. A free SSL certificate from your host is fine. |
 | Location | Install it at the **root of a domain or subdomain** (e.g. `https://yt.example.com`). OAuth discovery uses `/.well-known/…` at the domain root. |
@@ -146,6 +147,9 @@ Dashboard → **Channels → Add channel**:
 | `query_analytics` | Any YouTube Analytics v2 report | read |
 | `search_youtube` | Public search for competitor and trend research (100 quota units) | read |
 | `list_categories` | Video category ids | read |
+| `pixabay_search` | Pixabay images or videos (filters: type, orientation, category, colors, min size, editor's choice…), URLs in every size plus a numbered preview grid. Shown only when a key is saved and the source is enabled | – |
+| `wikimedia_search` | Wikimedia Commons images, videos or audio, with license, author, a ready attribution line and an optional public-domain/CC0-only filter, plus a preview grid | – |
+| `preview_image` | Lets the AI look closely at one image from Pixabay, Wikimedia or YouTube | – |
 | `notebook_write` / `notebook_read` / `notebook_update` | The AI Notebook | – |
 | `record_snapshot` | Stores today's subscriber, view and video counts for the growth charts | read |
 
@@ -167,6 +171,21 @@ Videos are always staged on your server first and then pushed to YouTube with th
   - Small files can also go through the tool itself as base64 (`data_base64` or `upload_file_chunk`). Base64 is sent as text inside the conversation, so it only makes sense for files of a few hundred KB.
 
 Staged files are deleted after publishing, or 48 hours after they expire.
+
+## Media sources (Pixabay & Wikimedia Commons)
+
+Dashboard → **Media sources**:
+
+- **Pixabay**:
+  1. Create a free account at [pixabay.com](https://pixabay.com/accounts/register/).
+  2. Copy your key from the [API documentation page](https://pixabay.com/api/docs/) (*Parameters → key*).
+  3. Paste it into the dashboard. The key is tested before it is saved, and stored encrypted.
+
+  Results are cached for 24 hours, as Pixabay requires. The default limit is 100 requests per minute. Pixabay media is free to use, but when showing results you should mention that they come from Pixabay.
+- **Wikimedia Commons**: works without a key. Each file has its own license (often CC BY or CC BY-SA), so the AI receives an `attribution` line to credit the author. Use `license=no_restrictions` for public domain / CC0 only.
+- You can turn either source off. Disabled sources are hidden from Claude.
+- Each search returns a **numbered preview grid** (built with PHP GD), so the AI can see the candidates and choose one. It then passes the URL to `set_thumbnail` (`image_url`) or `upload_video` (`source_url`).
+- The page includes a search box so you can see exactly what Claude gets.
 
 ## AI Notebook
 
@@ -235,6 +254,7 @@ The notebook is optional. The AI writes to it when you ask (for example *"keep a
 │   ├── youtube.php    YouTube Data + Analytics client, analytics summary
 │   ├── uploads.php    staged / resumable upload jobs
 │   ├── notebook.php   AI Notebook
+│   ├── media.php      Pixabay & Wikimedia Commons search, preview grid
 │   ├── tools.php      MCP tool catalog (shared with the dashboard)
 │   ├── oauth.php      OAuth server helpers
 │   └── i18n.php       translations for server pages
@@ -244,7 +264,7 @@ The notebook is optional. The AI writes to it when you ask (for example *"keep a
 
 ## Updating
 
-Upload the new files over the old ones, but **keep the `data/` folder**. The schema is created with `CREATE TABLE IF NOT EXISTS`.
+Upload the new files over the old ones, but **keep the `data/` folder**. Database changes are applied automatically on the next page load.
 
 ## License
 
