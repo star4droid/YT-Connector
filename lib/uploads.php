@@ -103,8 +103,55 @@ function upload_append(array $u, int $offset, string $tmpPath): array
     clearstatcache();
     $have = filesize($u['path']);
     $data = ['received' => $have, 'status' => 'receiving'];
+    if ($u['size'] > 0 && $have > (int)$u['size']) {
+        upload_discard($u, 'error');
+        throw new UserError('Received more bytes than the declared size — upload cancelled. Start again with the exact size.');
+    }
     if ($u['size'] > 0 && $have >= (int)$u['size']) $data['status'] = 'ready';
     return upload_set((int)$u['id'], $data);
+}
+
+/** Appends a base64 chunk (sent by the AI through the MCP tool). */
+function upload_append_base64(array $u, int $offset, string $b64): array
+{
+    $b64 = preg_replace('#^data:[^,]*,#', '', trim($b64));
+    $bin = base64_decode(preg_replace('/\s+/', '', $b64), true);
+    if ($bin === false || $bin === '') throw new UserError('data_base64 is not valid base64.');
+    $tmp = tempnam(staging_dir(), 'chunk');
+    file_put_contents($tmp, $bin);
+    try {
+        $u = upload_append($u, $offset, $tmp);
+    } finally {
+        @unlink($tmp);
+    }
+    if ((int)$u['received'] !== $offset + strlen($bin) && $u['status'] !== 'ready') {
+        throw new UserError('Offset mismatch: the server has ' . $u['received'] . ' bytes. Resend from offset ' . $u['received'] . '.');
+    }
+    return $u;
+}
+
+/** Appends a raw stream (HTTP PUT/POST body) to a staged upload. */
+function upload_append_stream(array $u, int $offset, $in): array
+{
+    $tmp = tempnam(staging_dir(), 'chunk');
+    $out = fopen($tmp, 'wb');
+    stream_copy_to_stream($in, $out);
+    fclose($out);
+    try {
+        if (filesize($tmp) === 0) throw new UserError('Empty request body.');
+        return upload_append($u, $offset, $tmp);
+    } finally {
+        @unlink($tmp);
+    }
+}
+
+/** Deletes the staged file(s) and marks the job as finished with the given status. */
+function upload_discard(array $u, string $status = 'cancelled'): void
+{
+    @unlink($u['path']);
+    $meta = json_decode($u['meta'] ?: '{}', true) ?: [];
+    if (!empty($meta['thumbnail_path'])) @unlink($meta['thumbnail_path']);
+    db_update('uploads', ['status' => $status, 'updated_at' => time()], 'id = ?', [$u['id']]);
 }
 
 /**
@@ -152,6 +199,8 @@ function upload_step(int $id, int $budget = 25): array
         }
     } catch (UserError $e) {
         $u = upload_set($id, ['status' => 'error', 'error' => $e->getMessage()]);
+        // files sent by the AI are never kept on the server: it can resend them
+        if ($u['source'] === 'mcp') upload_discard($u, 'error');
         log_activity('system', 'upload_failed', (int)$u['channel_id'], ['upload' => $id, 'error' => $e->getMessage()], false);
     } catch (Throwable $e) {
         // transient: keep status so the next step can resume
@@ -257,7 +306,7 @@ function fetch_image_bytes(string $url): string
 /** Removes expired staged files. Called opportunistically. */
 function uploads_cleanup(): void
 {
-    foreach (db_all("SELECT * FROM uploads WHERE expires < ? AND status NOT IN ('done','expired')", [time()]) as $u) {
+    foreach (db_all("SELECT * FROM uploads WHERE expires < ? AND status NOT IN ('done','expired','cancelled')", [time()]) as $u) {
         @unlink($u['path']);
         $meta = json_decode($u['meta'] ?: '{}', true) ?: [];
         if (!empty($meta['thumbnail_path'])) @unlink($meta['thumbnail_path']);

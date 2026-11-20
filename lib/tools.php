@@ -308,6 +308,82 @@ function tools_catalog(): array
             },
         ],
 
+        [
+            'name' => 'upload_file_start', 'title' => 'Upload a video file directly', 'access' => 'full', 'readOnly' => false,
+            'description' => 'Uploads a video file that YOU have (e.g. in your sandbox / attached to the chat) with no public link needed. The file is staged on the server, sent to YouTube, then deleted from the server immediately. Step 1: call this with filename, size (bytes) and the video metadata. It returns upload_id and a one-time put_url. Step 2 (preferred, any size): send the raw bytes from your sandbox: curl -X PUT --data-binary @file "<put_url>&offset=0" (in chunks with offset for large files). Step 2 (alternative, small files only): call upload_file_chunk with base64 pieces, or pass the whole file as data_base64 here. When all bytes arrive the YouTube upload starts automatically; poll upload_status until "done".',
+            'schema' => S_obj($ch + [
+                'filename' => S_str('File name, e.g. clip.mp4.'),
+                'size' => S_int('Exact file size in bytes.'),
+                'mime' => S_str('MIME type, default video/mp4.'),
+                'data_base64' => S_str('Optional: the whole file as base64 (only for small files).'),
+                'title' => S_str('Max 100 characters.'),
+                'description' => S_str('Max 5000 characters.'),
+                'tags' => S_arr('Tags.'),
+                'category_id' => S_str('Default 22.'),
+                'privacy' => S_str('private | unlisted | public (default private).', ['enum' => ['private', 'unlisted', 'public']]),
+                'publish_at' => S_str('Schedule (ISO 8601).'),
+                'made_for_kids' => S_bool('Default false.'),
+                'default_language' => S_str('e.g. ar, en.'),
+                'notify_subscribers' => S_bool('Default true.'),
+                'contains_synthetic_media' => S_bool('Disclose AI-generated/altered content.'),
+                'thumbnail_url' => S_str('Optional thumbnail URL.'),
+                'thumbnail_base64' => S_str('Optional thumbnail as base64 (JPEG/PNG ≤ 2 MB).'),
+                'playlist_id' => S_str('Optional playlist to add the video to.'),
+            ], ['size', 'title']),
+            'run' => function ($a, $ctx) {
+                $c = tool_channel($a, 'full', $ctx);
+                $size = (int)($a['size'] ?? 0);
+                if ($size <= 0) throw new UserError('size (bytes) is required.');
+                $u = upload_create((int)$c['id'], 'mcp', upload_meta_from($a), [
+                    'filename' => mb_substr((string)($a['filename'] ?? 'video.mp4'), 0, 200),
+                    'size' => $size,
+                    'mime' => (string)($a['mime'] ?? 'video/mp4'),
+                    'expires' => time() + 6 * 3600,
+                ]);
+                if (!empty($a['data_base64'])) {
+                    $u = upload_append_base64($u, 0, (string)$a['data_base64']);
+                    if ($u['status'] === 'ready') return upload_step((int)$u['id'], 25);
+                }
+                $put = base_url() . '/upload.php?t=' . $u['token'];
+                return upload_public($u) + [
+                    'put_url' => $put,
+                    'chunk_hint' => 'PUT raw bytes, 8–50 MB per request, offset = bytes already received.',
+                    'curl_single' => 'curl -sS -X PUT --data-binary @"FILE" "' . $put . '&offset=0"',
+                    'curl_chunked' => 'split -b 20M -d FILE part_ && o=0; for p in part_*; do curl -sS -X PUT --data-binary @"$p" "' . $put . '&offset=$o"; o=$((o+$(stat -c%s "$p"))); done',
+                    'next' => 'After the bytes are sent the YouTube upload starts; call upload_status with upload_id until status is "done". The staged file is deleted right after.',
+                ];
+            },
+        ],
+        [
+            'name' => 'upload_file_chunk', 'title' => 'Send file chunk (base64)', 'access' => 'full', 'readOnly' => false,
+            'description' => 'Sends the next piece of a file started with upload_file_start, as base64. offset must equal the bytes already received (returned as "received"). Keep each chunk ≤ ~4 MB of raw data. When the last chunk arrives the YouTube upload begins automatically.',
+            'schema' => S_obj([
+                'upload_id' => S_int('From upload_file_start.'),
+                'offset' => S_int('Byte offset of this chunk.'),
+                'data_base64' => S_str('Chunk content in base64.'),
+            ], ['upload_id', 'offset', 'data_base64']),
+            'run' => function ($a, $ctx) {
+                $u = upload_get((int)($a['upload_id'] ?? 0));
+                if (!$u || $u['source'] !== 'mcp') throw new UserError('Upload not found (start with upload_file_start).');
+                access_check(channel_get((int)$u['channel_id']) ?? ['ai_access' => 'none', 'title' => '?'], 'full', $ctx);
+                $u = upload_append_base64($u, (int)($a['offset'] ?? 0), (string)($a['data_base64'] ?? ''));
+                if ($u['status'] === 'ready') return upload_step((int)$u['id'], 20);
+                return upload_public($u);
+            },
+        ],
+        [
+            'name' => 'upload_cancel', 'title' => 'Cancel upload', 'access' => 'full', 'readOnly' => false,
+            'description' => 'Cancels an unfinished upload job and deletes its staged file from the server.',
+            'schema' => S_obj(['upload_id' => S_int('Upload id.')], ['upload_id']),
+            'run' => function ($a, $ctx) {
+                $u = upload_get((int)($a['upload_id'] ?? 0));
+                if (!$u) throw new UserError('Upload not found');
+                access_check(channel_get((int)$u['channel_id']) ?? ['ai_access' => 'none', 'title' => '?'], 'full', $ctx);
+                upload_discard($u, 'cancelled');
+                return ['ok' => true, 'cancelled' => (int)$u['id']];
+            },
+        ],
+
         /* ---------- playlists ---------- */
         [
             'name' => 'list_playlists', 'title' => 'List playlists', 'access' => 'read', 'readOnly' => true,

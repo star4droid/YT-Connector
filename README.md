@@ -137,7 +137,8 @@ Dashboard → **Channels → Add channel**:
 | `set_thumbnail` | Custom thumbnail from a URL or base64 | full |
 | `delete_video` | Permanent delete (requires `confirm=true`) | full |
 | `create_upload_link` | One-time page where the user drops a video file from any device | full |
-| `upload_video` / `upload_status` | Resumable upload from a URL or a dropped file, with optional thumbnail and playlist | full |
+| `upload_file_start` / `upload_file_chunk` | Upload a file **the AI itself has** (e.g. attached to the chat): raw bytes via `PUT upload.php` or base64 chunks; deleted from the server right after publishing | full |
+| `upload_video` / `upload_status` / `upload_cancel` | Resumable upload from a URL or a dropped file, with optional thumbnail and playlist; progress; cancel and delete the staged file | full |
 | `list_playlists` / `manage_playlist` | Read and create, edit, delete playlists; add, remove, move items | read / full |
 | `list_comments` / `manage_comment` | Read threads (also held/spam) / reply, post, edit, delete, moderate | read / full |
 | `list_captions` / `get_transcript` / `manage_caption` | Caption tracks, transcript text, upload or delete subtitles | read / full |
@@ -157,6 +158,13 @@ Videos are always staged on your server first and then pushed to YouTube with th
 - **From the dashboard:** Upload page → drag a file and fill in the details. The browser sends the file in chunks.
 - **Through Claude, with a file on your device:** Claude calls `create_upload_link`. You open the link on any device and drop the file. Claude then publishes it with the title, description and tags it wrote.
 - **Through Claude, from a URL:** `upload_video` with a direct download link (`.mp4`, etc.).
+- **Through Claude, with a file Claude has itself** (attached to the chat or generated in its sandbox): Claude calls `upload_file_start` (file name, exact size, metadata) and gets a one-time `put_url`. It then sends the bytes from its sandbox:
+  ```bash
+  curl -X PUT --data-binary @video.mp4 "https://YOUR-SITE/upload.php?t=TOKEN&offset=0"
+  ```
+  Large files go in several requests, each with `offset` = bytes received so far. When the last byte arrives, the server pushes the video to YouTube and **deletes its copy immediately** after YouTube confirms it.
+  - Claude's sandbox needs network access to your domain. In claude.ai this depends on the code-execution network settings, and you may need to allow your domain there.
+  - Small files can also go through the tool itself as base64 (`data_base64` or `upload_file_chunk`). Base64 is sent as text inside the conversation, so it only makes sense for files of a few hundred KB.
 
 Staged files are deleted after publishing, or 48 hours after they expire.
 
@@ -219,6 +227,7 @@ The notebook is optional. The AI writes to it when you ask (for example *"keep a
 ├── well-known.php     /.well-known/oauth-* discovery
 ├── google.php         Google OAuth helper (gets refresh tokens)
 ├── drop.php           One-time public upload page
+├── upload.php         Raw-bytes upload endpoint for files the AI sends (token auth)
 ├── lib/
 │   ├── bootstrap.php  config, session, settings, auth helpers
 │   ├── db.php         SQLite / MySQL layer + schema

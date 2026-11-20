@@ -65,7 +65,7 @@ function mcp_instructions(): string
 YT Connector lets you fully manage the user's YouTube channels.
 • Start with list_channels. Each channel has ai_access: "full" (read + write), "read" (read only) or hidden.
 • Videos: list_videos, get_video, get_video_visuals (see thumbnail + frames), get_transcript (what is said), update_video, set_thumbnail, delete_video (only after explicit user confirmation, confirm=true).
-• Uploading: if the user has a file, call create_upload_link and give them the link; otherwise upload_video with a direct source_url. Then poll upload_status until "done".
+• Uploading: if YOU have the video file (attached to the chat or created in your sandbox), call upload_file_start, then send the raw bytes with curl to the returned put_url (or, for tiny files, base64 via upload_file_chunk); the server pushes it to YouTube and deletes its copy right after. If the user has the file on their device, call create_upload_link and give them the link. For a public direct link use upload_video with source_url. Then poll upload_status until "done".
 • Analytics: analytics_summary for ready-made reports, query_analytics for custom questions. Data lags ~2 days.
 • Comments, playlists, captions and channel branding are also available.
 • AI Notebook (notebook_write / notebook_read): a journal shown in the dashboard. When the user asks for daily/weekly summaries, reports or to log your work, write entries there (Markdown body + optional metrics/charts). Read previous entries first to stay consistent.
