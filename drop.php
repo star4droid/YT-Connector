@@ -60,7 +60,7 @@ $chunk = 4 * 1024 * 1024;
     <?= lang_switch() ?>
   </div>
   <?php if (!$valid): ?>
-    <h1>⏳</h1><div class="alert error"><?= h(t('drop_expired')) ?></div>
+    <h1><?= h(t('drop_title')) ?></h1><div class="alert error"><?= icon('hourglass') ?><div><?= h(t('drop_expired')) ?></div></div>
   <?php else: ?>
     <h1><?= h(t('drop_title')) ?></h1>
     <p class="muted"><?= h(t('drop_sub')) ?></p>
@@ -72,17 +72,17 @@ $chunk = 4 * 1024 * 1024;
     <?php endif; ?>
     <label class="dropzone big" id="dz">
       <input type="file" accept="video/*" id="file" hidden>
-      <div class="dz-icon">⬆</div>
+      <div class="ibox brand lg"><?= icon('upload') ?></div>
       <div class="dz-text"><?= h(t('drop_choose')) ?></div>
-      <div class="dz-sub muted">MP4 · MOV · WEBM · AVI · MKV</div>
+      <div class="muted small">MP4 · MOV · WEBM · AVI · MKV</div>
     </label>
     <div class="progress-wrap" id="pw" hidden>
       <div class="pw-head"><span id="pname"></span><span id="ppct">0%</span></div>
       <div class="progress"><div id="pbar"></div></div>
       <div class="muted small" id="pstate"></div>
     </div>
-    <div class="alert success" id="done" hidden></div>
-    <div class="alert error" id="err" hidden></div>
+    <div class="alert success" id="done" hidden><?= icon('check') ?><div id="doneTxt"></div></div>
+    <div class="alert error" id="err" hidden><?= icon('alert') ?><div id="errTxt"></div></div>
   <?php endif; ?>
 </main>
 <?php if ($valid): ?>
@@ -120,8 +120,9 @@ async function start(file) {
       if (u.status === 'done' || u.awaiting_metadata || u.status === 'ready') break;
     }
     $('pw').hidden = true; $('done').hidden = false;
-    $('done').innerHTML = '✅ ' + DONE_TXT + (u.video_url ? '<br><a href="' + u.video_url + '" target="_blank">' + u.video_url + '</a>' : '');
-  } catch (e) { $('err').hidden = false; $('err').textContent = e.message; }
+    $('doneTxt').textContent = DONE_TXT;
+    if (u.video_url) { const a = document.createElement('a'); a.href = u.video_url; a.target = '_blank'; a.textContent = u.video_url; $('doneTxt').append(document.createElement('br'), a); }
+  } catch (e) { $('err').hidden = false; $('errTxt').textContent = e.message; }
 }
 </script>
 <?php endif; ?>

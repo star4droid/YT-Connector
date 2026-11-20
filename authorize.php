@@ -22,7 +22,7 @@ function fail_page(string $msg): void
 {
     http_response_code(400);
     page_head('Error');
-    echo '<main class="auth-card"><h1>⚠️ Authorization error</h1><div class="alert error">' . h($msg) . '</div></main></body></html>';
+    echo '<main class="auth-card"><h1>Authorization error</h1><div class="alert error">' . icon('alert') . '<div>' . h($msg) . '</div></div></main></body></html>';
     exit;
 }
 
@@ -84,7 +84,7 @@ foreach ($p as $k => $v) $hidden .= '<input type="hidden" name="' . h($k) . '" v
   <?php if (!is_admin()): ?>
     <h1><?= h(t('login_title')) ?></h1>
     <p class="muted"><b><?= h($client['name']) ?></b> <?= h(t('consent_sub')) ?></p>
-    <?php if ($error): ?><div class="alert error"><?= h($error) ?></div><?php endif; ?>
+    <?php if ($error): ?><div class="alert error"><?= icon('alert') ?><div><?= h($error) ?></div></div><?php endif; ?>
     <form method="post" class="form">
       <?= $hidden ?><input type="hidden" name="action" value="login">
       <label class="field"><span><?= h(t('password')) ?></span><input type="password" name="password" required autofocus></label>
@@ -92,16 +92,16 @@ foreach ($p as $k => $v) $hidden .= '<input type="hidden" name="' . h($k) . '" v
     </form>
   <?php else: ?>
     <div class="consent-hero">
-      <div class="consent-icon">🤖</div><div class="consent-link"></div><div class="consent-icon yt">▶</div>
+      <div class="ibox ai"><?= icon('bot') ?></div><div class="consent-link"></div><div class="ibox brand"><?= icon('youtube') ?></div>
     </div>
     <h1><?= h(t('consent_title')) ?></h1>
     <p class="muted"><b><?= h($client['name']) ?></b> <?= h(t('consent_sub')) ?></p>
     <div class="consent-box">
       <div class="muted small"><?= h(t('consent_list')) ?></div>
       <ul class="checks">
-        <li><?= h(t('consent_1')) ?></li>
-        <li><?= h(t('consent_2')) ?></li>
-        <li><?= h(t('consent_3')) ?></li>
+        <li><?= icon('check') ?><span><?= h(t('consent_1')) ?></span></li>
+        <li><?= icon('check') ?><span><?= h(t('consent_2')) ?></span></li>
+        <li><?= icon('check') ?><span><?= h(t('consent_3')) ?></span></li>
       </ul>
       <div class="muted small"><?= h(t('redirect_to')) ?> <code dir="ltr"><?= h($host) ?></code></div>
     </div>

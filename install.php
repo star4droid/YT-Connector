@@ -71,11 +71,11 @@ page_head(t('install_title'));
 
   <div class="req-grid">
     <?php foreach ($checks as $name => $ok): ?>
-      <div class="req <?= $ok ? 'ok' : 'bad' ?>"><span class="dot"></span><?= h($name) ?></div>
+      <div class="req <?= $ok ? 'ok' : 'bad' ?>"><?= icon($ok ? 'check' : 'x') ?><?= h($name) ?></div>
     <?php endforeach; ?>
   </div>
-  <?php if (!$checks['data/ writable']): ?><div class="alert error"><?= h(t('not_writable')) ?></div><?php endif; ?>
-  <?php if ($error): ?><div class="alert error"><?= h($error) ?></div><?php endif; ?>
+  <?php if (!$checks['data/ writable']): ?><div class="alert error"><?= icon('alert') ?><div><?= h(t('not_writable')) ?></div></div><?php endif; ?>
+  <?php if ($error): ?><div class="alert error"><?= icon('alert') ?><div><?= h($error) ?></div></div><?php endif; ?>
 
   <form method="post" class="form" autocomplete="off">
     <div class="grid-2">

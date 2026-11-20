@@ -37,7 +37,7 @@ page_head(t('sign_in'));
   </div>
   <h1><?= h(t('login_title')) ?></h1>
   <p class="muted"><?= h(t('login_sub')) ?></p>
-  <?php if ($error): ?><div class="alert error"><?= h($error) ?></div><?php endif; ?>
+  <?php if ($error): ?><div class="alert error"><?= icon('alert') ?><div><?= h($error) ?></div></div><?php endif; ?>
   <form method="post" class="form">
     <input type="hidden" name="next" value="<?= h($next) ?>">
     <label class="field"><span><?= h(t('password')) ?></span>
