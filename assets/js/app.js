@@ -170,6 +170,7 @@ const NAV = [
   ['upload', 'upload', 'nav_upload'],
   ['notebook', 'book', 'nav_notebook'],
   ['media', 'image', 'nav_media'],
+  ['telegram', 'send', 'nav_telegram'],
   ['connector', 'zap', 'nav_connector'],
   ['activity', 'activity', 'nav_activity'],
   ['settings', 'settings', 'nav_settings'],
@@ -209,7 +210,7 @@ function renderNav() {
     <a href="#/channels" class="${isActive('channels') ? 'active' : ''}">${ic('youtube')}<span>${t('nav_channels')}</span></a>
     <a href="#/upload" aria-label="${t('upload')}"><span class="fab">${ic('plus')}</span></a>
     <a href="#/notebook" class="${isActive('notebook') ? 'active' : ''}">${ic('book')}<span>${t('nb_short')}</span></a>
-    <button type="button" id="bbMore" class="${['media', 'connector', 'activity', 'settings'].includes(cur) ? 'active' : ''}">${ic('menu')}<span>${t('more')}</span></button>`;
+    <button type="button" id="bbMore" class="${['media', 'telegram', 'connector', 'activity', 'settings'].includes(cur) ? 'active' : ''}">${ic('menu')}<span>${t('more')}</span></button>`;
   $('#bbMore').onclick = openNav;
   $$('[data-t]').forEach(e => e.textContent = t(e.dataset.t));
   paintChrome();
@@ -235,7 +236,7 @@ async function refreshBoot() {
 /* ---------------- router ---------------- */
 const routes = {
   overview: vOverview, welcome: vWelcome, channels: vChannels, channel: vChannel, video: vVideo,
-  upload: vUpload, notebook: vNotebook, media: vMedia, connector: vConnector, activity: vActivity, settings: vSettings,
+  upload: vUpload, notebook: vNotebook, media: vMedia, telegram: vTelegram, connector: vConnector, activity: vActivity, settings: vSettings,
 };
 let routeToken = 0;
 async function route() {
@@ -1118,6 +1119,66 @@ function mediaModal(x) {
         ${x.page_url ? `<a class="btn sm" target="_blank" rel="noopener" href="${h(x.page_url)}">${ic('external', 'sm')}${t('open_source_page')}</a>` : ''}
       </div></div>`,
   });
+}
+
+/* ---------- Telegram bot ---------- */
+async function vTelegram() {
+  crumbs([t('nav_telegram')]);
+  if (!S.boot) await refreshBoot();
+  const st = await api('tg.settings');
+  const bot = st.bot;
+  const chatName = (c) => c.title || (c.username ? '@' + c.username : String(c.id));
+  const typeBadge = (tp) => `<span class="badge ${tp === 'channel' ? 'brand' : tp === 'private' ? 'ok' : 'ai'}">${t('tg_' + (tp || 'private'), null, tp)}</span>`;
+  view.innerHTML = `
+    <div class="page-head"><div><h1>${t('nav_telegram')}</h1><div class="sub">${t('tg_sub')}</div></div></div>
+    <div class="grid g2" style="align-items:start">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head"><span class="ibox info">${ic('send')}</span><h3>${t('tg_bot')}</h3>${st.has_token ? `<span class="badge ok">${ic('check')}${t('connected')}</span>` : `<span class="badge warn">${ic('key')}${t('tg_no_token')}</span>`}</div>
+          ${bot ? `<div class="act" style="padding-top:0"><div class="ibox lg info">${ic('bot')}</div><div class="a-main"><div class="a-title"><b>${h(bot.name)}</b></div><a class="muted small ltr" target="_blank" rel="noopener" href="https://t.me/${h(bot.username)}">@${h(bot.username)}</a></div><a class="btn sm" target="_blank" rel="noopener" href="https://t.me/${h(bot.username)}">${ic('external', 'sm')}${t('open')}</a></div>` : ''}
+          <div class="stack" style="gap:12px">
+            ${st.has_token ? `<label class="toggle-row"><span>${t('media_enable')}</span><span class="switch"><input type="checkbox" id="tgOn" ${st.enabled ? 'checked' : ''}><i></i></span></label>` : ''}
+            <form class="field" id="tgTok"><span>Bot token</span>
+              <div class="row nowrap"><input type="password" name="token" dir="ltr" autocomplete="off" placeholder="${st.has_token ? t('keep_current') : '123456789:AAH…'}"><button class="btn primary">${ic('save', 'sm')}${t('save')}</button></div>
+              <small>${t('tg_token_hint')}</small></form>
+            ${st.has_token ? `<div><button class="btn sm danger" id="tgDel">${ic('trash', 'sm')}${t('remove_key')}</button></div>` : ''}
+          </div>
+        </div>
+        <div class="card"><div class="card-head"><h3>${ic('info')}${t('tg_howto')}</h3></div>
+          <ol class="howto"><li>${t('tg_h1')}</li><li>${t('tg_h2')}</li><li>${t('tg_h3')}</li><li>${t('tg_h4')}</li></ol>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <div class="card-head"><h3>${ic('users')}${t('tg_chats')}</h3>${st.has_token ? `<button class="btn sm" id="tgRef">${ic('refresh', 'sm')}${t('tg_refresh')}</button>` : ''}</div>
+          <div id="tgChats">${st.chats.length ? st.chats.map(c => `<div class="act"><div class="ibox sm ${String(c.id) === st.default_chat ? 'brand' : ''}">${ic(c.type === 'channel' ? 'zap' : c.type === 'private' ? 'user' : 'users')}</div>
+              <div class="a-main"><div class="a-title"><b>${h(chatName(c))}</b>${typeBadge(c.type)}${String(c.id) === st.default_chat ? `<span class="badge brand">${t('tg_default')}</span>` : ''}</div><div class="muted small ltr">${h(c.id)}${c.username ? ' · @' + h(c.username) : ''}</div></div>
+              ${String(c.id) !== st.default_chat ? `<button class="btn sm ghost" data-def="${h(c.id)}">${t('tg_make_default')}</button>` : ''}</div>`).join('') : `<p class="muted small" style="margin:0">${t('tg_no_chats')}</p>`}</div>
+          <hr>
+          <form class="form" id="tgCfg">
+            <label class="field"><span>${t('tg_default_chat')}</span><input name="default_chat" dir="ltr" value="${h(st.default_chat)}" placeholder="123456789 / @mychannel"><small>${t('tg_default_hint')}</small></label>
+            <label class="field"><span>${t('tg_allowed')}</span><textarea name="allowed" dir="ltr" rows="2" style="min-height:60px" placeholder="123456789, -1001234567890, @mychannel">${h(st.allowed)}</textarea><small>${t('tg_allowed_hint')}</small></label>
+            <div><button class="btn">${ic('save', 'sm')}${t('save')}</button></div>
+          </form>
+        </div>
+        ${st.has_token ? `<div class="card"><div class="card-head"><h3>${ic('send')}${t('tg_test')}</h3></div>
+          <form class="form" id="tgTest">
+            <label class="field"><span>${t('tg_chat')}</span><select name="chat">${st.chats.map(c => `<option value="${h(c.id)}" ${String(c.id) === st.default_chat ? 'selected' : ''}>${h(chatName(c))}</option>`).join('')}<option value="">${t('tg_default')}</option></select></label>
+            <label class="field"><span>${t('content')}</span><textarea name="text" rows="3" dir="auto">${h(t('tg_test_text'))}</textarea></label>
+            <div><button class="btn primary">${ic('send', 'sm flip')}${t('send')}</button></div>
+          </form></div>` : ''}
+        <div class="card"><div class="card-head"><h3>${ic('bot')}${t('ask_claude')}</h3></div>
+          <div class="prompt-list">${['tgp1', 'tgp2', 'tgp3', 'tgp4'].map(k => `<button class="prompt" data-copy="${h(t(k))}">${ic('message')}<span>${t(k)}</span></button>`).join('')}</div></div>
+      </div>
+    </div>`;
+  const save = async (data, msg = t('saved')) => { try { await api('tg.save', data); toast(msg); route(); } catch (e) { toast(e.message, 'err'); } };
+  $('#tgTok').onsubmit = (e) => { e.preventDefault(); const v = e.target.token.value.trim(); if (!v) return; busy($('button', e.target), () => save({ token: v }, t('tg_token_saved'))); };
+  $('#tgOn') && ($('#tgOn').onchange = (e) => api('tg.save', { enabled: e.target.checked }).then(() => toast(t('saved'))));
+  $('#tgDel') && ($('#tgDel').onclick = async () => { if (await confirmDlg(t('remove_key'), t('tg_remove_q'))) save({ remove_token: 1 }); });
+  $('#tgCfg').onsubmit = (e) => { e.preventDefault(); busy($('button', e.target), () => save(Object.fromEntries(new FormData(e.target).entries()))); };
+  $$('[data-def]').forEach(b => b.onclick = () => save({ default_chat: b.dataset.def }));
+  $('#tgRef') && ($('#tgRef').onclick = (e) => busy(e.currentTarget, async () => { try { const r = await api('tg.refresh'); toast(t('tg_found', { n: r.chats.length })); route(); } catch (er) { toast(er.message, 'err'); } }));
+  $('#tgTest') && ($('#tgTest').onsubmit = (e) => { e.preventDefault(); busy($('button', e.target), async () => { try { await api('tg.test', Object.fromEntries(new FormData(e.target).entries())); toast(t('tg_sent')); } catch (er) { toast(er.message, 'err'); } }); });
 }
 
 /* ---------- Connector ---------- */

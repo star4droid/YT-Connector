@@ -16,7 +16,7 @@ if (!is_installed()) json_out(['error' => 'not_installed'], 503);
 
 $token = (string)($_GET['t'] ?? '');
 $u = $token !== '' ? upload_by_token($token) : null;
-if (!$u || $u['source'] !== 'mcp' || (int)$u['expires'] < time()) json_out(['error' => 'Invalid or expired upload token'], 404);
+if (!$u || !in_array($u['source'], ['mcp', 'tg'], true) || (int)$u['expires'] < time()) json_out(['error' => 'Invalid or expired upload token'], 404);
 
 $method = $_SERVER['REQUEST_METHOD'];
 try {
@@ -33,6 +33,9 @@ try {
         $in = fopen('php://input', 'rb');
         $u = upload_append_stream($u, $offset, $in);
         fclose($in);
+    }
+    if ($u['status'] === 'ready' && $u['source'] === 'tg') {
+        json_out(['upload' => upload_public($u), 'next' => 'File received. Call telegram_send_file with upload_id=' . (int)$u['id'] . '.']);
     }
     if ($u['status'] === 'ready') {
         log_activity('mcp', 'file_received', (int)$u['channel_id'], ['upload' => (int)$u['id'], 'file' => $u['filename'], 'bytes' => (int)$u['size']]);

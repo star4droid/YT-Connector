@@ -297,6 +297,39 @@ try {
             $args = is_array($in['args'] ?? null) ? $in['args'] : [];
             json_out(['result' => $src === 'wikimedia' ? wikimedia_search($args) : pixabay_search($args)]);
 
+        /* ---------------- Telegram ---------------- */
+        case 'tg.settings':
+            json_out(tg_settings_public());
+
+        case 'tg.save':
+            if (!empty($in['remove_token'])) {
+                foreach (['tg_token_enc', 'tg_bot', 'tg_offset', 'tg_chats'] as $k) setting_set($k, '');
+                log_activity('web', 'telegram_token_removed');
+            }
+            if (!empty($in['token'])) {
+                $tok = trim((string)$in['token']);
+                if (!preg_match('/^\d+:[A-Za-z0-9_-]{20,}$/', $tok)) throw new UserError('This does not look like a bot token (format 123456789:ABC…).');
+                $me = tg_api('getMe', [], [], $tok);
+                setting_set('tg_token_enc', encrypt_str($tok));
+                setting_set('tg_bot', json_encode(['id' => $me['id'], 'name' => $me['first_name'] ?? '', 'username' => $me['username'] ?? ''], JSON_UNESCAPED_UNICODE));
+                setting_set('tg_offset', '0');
+                log_activity('web', 'telegram_token_saved', null, ['bot' => '@' . ($me['username'] ?? '')]);
+            }
+            if (isset($in['enabled'])) setting_set('tg_enabled', $in['enabled'] ? '1' : '0');
+            if (isset($in['default_chat'])) setting_set('tg_default_chat', trim((string)$in['default_chat']));
+            if (isset($in['allowed'])) setting_set('tg_allowed', trim((string)$in['allowed']));
+            json_out(tg_settings_public());
+
+        case 'tg.refresh':
+            $msgs = tg_updates(100, false);
+            json_out(tg_settings_public() + ['recent' => array_slice(array_reverse($msgs), 0, 10)]);
+
+        case 'tg.test':
+            $chat = tg_chat($in['chat'] ?? null);
+            $r = tg_api('sendMessage', ['chat_id' => $chat, 'text' => (string)($in['text'] ?? 'YT Connector ✓'), 'parse_mode' => 'HTML']);
+            log_activity('web', 'telegram_test_message', null, ['chat' => $chat]);
+            json_out(tg_sent_public($r));
+
         /* ---------------- activity ---------------- */
         case 'activity':
             $where = [];

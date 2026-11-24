@@ -26,6 +26,7 @@ require_once __DIR__ . '/youtube.php';
 require_once __DIR__ . '/uploads.php';
 require_once __DIR__ . '/notebook.php';
 require_once __DIR__ . '/media.php';
+require_once __DIR__ . '/telegram.php';
 
 function is_installed(): bool
 {

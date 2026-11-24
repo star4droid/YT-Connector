@@ -164,6 +164,7 @@ function upload_step(int $id, int $budget = 25): array
     $deadline = time() + $budget;
     $u = upload_get($id);
     if (!$u) throw new UserError('Upload not found');
+    if ($u['source'] === 'tg') return upload_public($u); // Telegram files are sent by telegram_send_file
 
     try {
         while (time() < $deadline) {

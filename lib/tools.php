@@ -300,7 +300,7 @@ function tools_catalog(): array
                 }
                 $u = upload_get((int)$a['upload_id']);
                 if (!$u) throw new UserError('Upload not found');
-                access_check(channel_get((int)$u['channel_id']) ?? [], 'read', $ctx);
+                if ((int)$u['channel_id'] > 0) access_check(channel_get((int)$u['channel_id']) ?? ['ai_access' => 'none', 'title' => '?'], 'read', $ctx);
                 if (($a['continue'] ?? true) && in_array($u['status'], ['downloading', 'ready', 'uploading'], true)) {
                     return upload_step((int)$u['id'], 25);
                 }
@@ -378,7 +378,7 @@ function tools_catalog(): array
             'run' => function ($a, $ctx) {
                 $u = upload_get((int)($a['upload_id'] ?? 0));
                 if (!$u) throw new UserError('Upload not found');
-                access_check(channel_get((int)$u['channel_id']) ?? ['ai_access' => 'none', 'title' => '?'], 'full', $ctx);
+                if ((int)$u['channel_id'] > 0) access_check(channel_get((int)$u['channel_id']) ?? ['ai_access' => 'none', 'title' => '?'], 'full', $ctx);
                 upload_discard($u, 'cancelled');
                 return ['ok' => true, 'cancelled' => (int)$u['id']];
             },
@@ -727,6 +727,213 @@ function tools_catalog(): array
                     ['type' => 'text', 'text' => $url . ' (' . round(strlen($r['body']) / 1024) . ' KB)'],
                     ['type' => 'image', 'data' => base64_encode($r['body']), 'mimeType' => $mime],
                 ]];
+            },
+        ],
+
+        /* ---------- Telegram bot ---------- */
+        [
+            'name' => 'telegram_chats', 'title' => 'Telegram: bot & chats', 'access' => 'none', 'readOnly' => true,
+            'enabled' => 'tg_enabled',
+            'description' => 'Shows the connected Telegram bot, the default chat and the chats it knows (people who sent /start, groups it is in, channels where it is admin). Use refresh=true to pull new chats from recent updates. Chats can then be addressed by id, @username or title in the other telegram_* tools.',
+            'schema' => S_obj(['refresh' => S_bool('Fetch recent updates to discover new chats (default true).')]),
+            'run' => function ($a, $ctx) {
+                $note = null;
+                if (($a['refresh'] ?? true) !== false) {
+                    try { tg_updates(100, false); } catch (UserError $e) { $note = $e->getMessage(); }
+                }
+                $s = tg_settings_public();
+                return [
+                    'bot' => $s['bot'],
+                    'default_chat' => $s['default_chat'] ?: null,
+                    'allowed_chats' => tg_allowed_list() ?: 'any',
+                    'chats' => $s['chats'],
+                    'note' => $note ?? 'If a chat is missing: the person must send /start to the bot, or add the bot to the group / as admin of the channel, then refresh.',
+                ];
+            },
+        ],
+        [
+            'name' => 'telegram_send_message', 'title' => 'Telegram: send message', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Sends a text message through the user\'s Telegram bot (to the default chat when chat is omitted). HTML formatting by default: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="">, <blockquote>, <tg-spoiler>. Long texts are split automatically. Optional inline buttons: [[{"text":"Watch","url":"https://youtu.be/…"}]] or callback buttons [[{"text":"Yes","data":"yes"}]] (presses appear in telegram_read_messages).',
+            'schema' => S_obj([
+                'chat' => S_str('Chat id, @username/@channel or known chat title. Omit for the default chat.'),
+                'text' => S_str('Message text.'),
+                'parse_mode' => S_str('HTML (default) | MarkdownV2 | none', ['enum' => ['HTML', 'MarkdownV2', 'none']]),
+                'buttons' => ['type' => 'array', 'description' => 'Rows of inline buttons: [[{"text":"…","url":"…"}],[{"text":"…","data":"…"}]]', 'items' => ['type' => 'array', 'items' => ['type' => 'object']]],
+                'disable_preview' => S_bool('Hide link previews.'),
+                'silent' => S_bool('Send without notification sound.'),
+                'protect_content' => S_bool('Prevent forwarding / saving.'),
+                'reply_to' => S_int('Reply to this message id.'),
+                'thread_id' => S_int('Forum topic id (groups with topics).'),
+            ], ['text']),
+            'run' => function ($a, $ctx) {
+                $chat = tg_chat($a['chat'] ?? null);
+                $text = (string)($a['text'] ?? '');
+                if (trim($text) === '') throw new UserError('text is empty');
+                $parts = [];
+                while (mb_strlen($text) > 4096) {
+                    $cut = mb_strrpos(mb_substr($text, 0, 4096), "\n") ?: 4096;
+                    $parts[] = mb_substr($text, 0, $cut);
+                    $text = ltrim(mb_substr($text, $cut));
+                }
+                $parts[] = $text;
+                $sent = [];
+                foreach ($parts as $i => $part) {
+                    $p = tg_common($i === count($parts) - 1 ? $a : array_diff_key($a, ['buttons' => 1])) + ['chat_id' => $chat, 'text' => $part];
+                    if (!empty($a['disable_preview'])) $p['link_preview_options'] = ['is_disabled' => true];
+                    $sent[] = tg_api('sendMessage', $p);
+                }
+                return count($sent) === 1 ? tg_sent_public($sent[0]) : tg_sent_public($sent);
+            },
+        ],
+        [
+            'name' => 'telegram_send_file', 'title' => 'Telegram: send photo / video / file', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Sends a photo, video, document (any file), audio, animation (GIF), voice, video_note or sticker. Source, one of: url (public link — Telegram fetches it; add download_first=true if Telegram cannot reach it or it is 20–50 MB), file_id (re-send something already on Telegram), upload_id (a file YOU sent from your sandbox via telegram_file_start — deleted from the server after sending), or base64 (tiny files only). Max 50 MB. Works great with YouTube thumbnails, Pixabay/Wikimedia results or your generated files.',
+            'schema' => S_obj([
+                'chat' => S_str('Chat id, @username or known title. Omit for the default chat.'),
+                'type' => S_str('photo | video | document | audio | animation | voice | video_note | sticker (default document).', ['enum' => TG_MEDIA_TYPES]),
+                'url' => S_str('Public URL of the file.'),
+                'download_first' => S_bool('Let the server download the URL and upload it (for links Telegram cannot fetch).'),
+                'file_id' => S_str('Telegram file_id to re-send.'),
+                'upload_id' => S_int('From telegram_file_start, after the bytes were sent.'),
+                'base64' => S_str('File content in base64 (small files).'),
+                'filename' => S_str('File name to show (with base64 / download_first).'),
+                'caption' => S_str('Caption (max 1024 chars, HTML by default).'),
+                'parse_mode' => S_str('HTML (default) | MarkdownV2 | none', ['enum' => ['HTML', 'MarkdownV2', 'none']]),
+                'spoiler' => S_bool('Blur photo/video as spoiler.'),
+                'buttons' => ['type' => 'array', 'description' => 'Inline button rows, as in telegram_send_message.', 'items' => ['type' => 'array', 'items' => ['type' => 'object']]],
+                'silent' => S_bool('No notification sound.'),
+                'protect_content' => S_bool('Prevent forwarding / saving.'),
+                'reply_to' => S_int('Reply to message id.'),
+            ], ['type']),
+            'run' => fn($a, $ctx) => tg_send_media($a),
+        ],
+        [
+            'name' => 'telegram_send_album', 'title' => 'Telegram: send album', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Sends 2–10 photos/videos (or documents, or audios) grouped as one album. Each item: {"type":"photo|video|document|audio","url"|"file_id"|"upload_id":…, "caption":"…"}.',
+            'schema' => S_obj([
+                'chat' => S_str('Chat; omit for default.'),
+                'items' => ['type' => 'array', 'description' => '2-10 media items.', 'items' => ['type' => 'object']],
+                'silent' => S_bool('No notification sound.'),
+            ], ['items']),
+            'run' => fn($a, $ctx) => tg_send_album($a),
+        ],
+        [
+            'name' => 'telegram_file_start', 'title' => 'Telegram: upload a file from your sandbox', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Prepares sending a file that YOU have (attached to the chat or generated in your sandbox, max 50 MB). Returns upload_id and a one-time put_url: send the bytes with curl -X PUT --data-binary @file "<put_url>&offset=0", then call telegram_send_file with upload_id. The server deletes its copy right after Telegram receives it.',
+            'schema' => S_obj([
+                'filename' => S_str('File name, e.g. report.pdf, clip.mp4.'),
+                'size' => S_int('Exact size in bytes.'),
+                'mime' => S_str('MIME type (optional).'),
+            ], ['filename', 'size']),
+            'run' => function ($a, $ctx) {
+                $size = (int)($a['size'] ?? 0);
+                if ($size <= 0) throw new UserError('size is required');
+                if ($size > TG_MAX_UPLOAD) throw new UserError('Telegram bots can send files up to 50 MB.');
+                $u = upload_create(0, 'tg', [], [
+                    'filename' => mb_substr((string)$a['filename'], 0, 200),
+                    'size' => $size,
+                    'mime' => (string)($a['mime'] ?? 'application/octet-stream'),
+                    'expires' => time() + 6 * 3600,
+                ]);
+                $put = base_url() . '/upload.php?t=' . $u['token'];
+                return ['upload_id' => (int)$u['id'], 'put_url' => $put, 'curl' => 'curl -sS -X PUT --data-binary @"FILE" "' . $put . '&offset=0"', 'next' => 'Then call telegram_send_file with type and upload_id=' . $u['id'] . '.'];
+            },
+        ],
+        [
+            'name' => 'telegram_read_messages', 'title' => 'Telegram: read incoming messages', 'access' => 'none', 'readOnly' => true,
+            'enabled' => 'tg_enabled',
+            'description' => 'Reads recent messages / channel posts / button presses received by the bot (text, sender, chat, attached file info with file_id). mark_read=true confirms them so they are not returned next time. Use telegram_get_file to look at or use an attached file.',
+            'schema' => S_obj(['limit' => S_int('1-100, default 30.'), 'mark_read' => S_bool('Confirm as read (default false).')]),
+            'run' => fn($a, $ctx) => ['messages' => tg_updates((int)($a['limit'] ?? 30), !empty($a['mark_read']))],
+        ],
+        [
+            'name' => 'telegram_get_file', 'title' => 'Telegram: open a received file', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Opens a file someone sent to the bot (by file_id, ≤ 20 MB). action=view returns images so you can see them and text files as text. action=youtube_upload uploads a received video straight to a YouTube channel (needs channel + title; same metadata as upload_video) — e.g. the user sends a clip to the bot and asks you to publish it.',
+            'schema' => S_obj([
+                'file_id' => S_str('file_id from telegram_read_messages.'),
+                'action' => S_str('view (default) | youtube_upload', ['enum' => ['view', 'youtube_upload']]),
+                'channel' => S_str('YouTube channel for youtube_upload.'),
+                'title' => S_str('Video title for youtube_upload.'),
+                'description' => S_str('Video description.'),
+                'tags' => S_arr('Tags.'),
+                'privacy' => S_str('private (default) | unlisted | public', ['enum' => ['private', 'unlisted', 'public']]),
+                'publish_at' => S_str('Schedule (ISO 8601).'),
+                'category_id' => S_str('Category id.'),
+                'made_for_kids' => S_bool('Default false.'),
+            ], ['file_id']),
+            'run' => function ($a, $ctx) {
+                if (($a['action'] ?? 'view') === 'youtube_upload') {
+                    $c = tool_channel($a, 'full', $ctx);
+                    if (empty($a['title'])) throw new UserError('title is required for youtube_upload');
+                    [$tmp, $info] = tg_download((string)$a['file_id']);
+                    $u = upload_create((int)$c['id'], 'mcp', upload_meta_from($a), ['filename' => $info['name'], 'size' => $info['size'], 'mime' => 'video/*', 'expires' => time() + 6 * 3600]);
+                    rename($tmp, $u['path']);
+                    upload_set((int)$u['id'], ['received' => $info['size'], 'status' => 'ready']);
+                    return upload_step((int)$u['id'], 25) + ['next' => 'Poll upload_status until done.'];
+                }
+                [$tmp, $info] = tg_download((string)$a['file_id']);
+                $bytes = file_get_contents($tmp);
+                @unlink($tmp);
+                $mime = YouTube::sniffImage($bytes) ?: (substr($bytes, 8, 4) === 'WEBP' ? 'image/webp' : null);
+                if ($mime && strlen($bytes) <= 5 * 1024 * 1024) {
+                    return ['__content' => [['type' => 'text', 'text' => json_encode($info)], ['type' => 'image', 'data' => base64_encode($bytes), 'mimeType' => $mime]]];
+                }
+                if (strlen($bytes) <= 200000 && mb_check_encoding($bytes, 'UTF-8') && !preg_match('/[\x00-\x08\x0E-\x1F]/', $bytes)) {
+                    return $info + ['text' => $bytes];
+                }
+                return $info + ['note' => 'Binary file (' . strlen($bytes) . ' bytes). Use action=youtube_upload for videos, or re-send it with telegram_send_file file_id.'];
+            },
+        ],
+        [
+            'name' => 'telegram_manage_message', 'title' => 'Telegram: edit / delete / pin / forward', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Actions on a message: edit_text, edit_caption, delete, pin, unpin, forward (to to_chat), copy (to to_chat, without "forwarded from"), react (emoji, e.g. 👍 🔥 ❤).',
+            'schema' => S_obj([
+                'action' => S_str('edit_text | edit_caption | delete | pin | unpin | forward | copy | react', ['enum' => ['edit_text', 'edit_caption', 'delete', 'pin', 'unpin', 'forward', 'copy', 'react']]),
+                'chat' => S_str('Chat of the message; omit for default.'),
+                'message_id' => S_int('Message id.'),
+                'text' => S_str('New text / caption.'),
+                'parse_mode' => S_str('HTML (default) | MarkdownV2 | none'),
+                'to_chat' => S_str('Destination chat for forward / copy.'),
+                'emoji' => S_str('Reaction emoji for react.'),
+                'silent' => S_bool('Pin without notification.'),
+            ], ['action', 'message_id']),
+            'run' => function ($a, $ctx) {
+                $chat = tg_chat($a['chat'] ?? null);
+                $mid = (int)$a['message_id'];
+                $pm = ($a['parse_mode'] ?? 'HTML') === 'none' ? null : ($a['parse_mode'] ?? 'HTML');
+                switch ($a['action']) {
+                    case 'edit_text': tg_api('editMessageText', ['chat_id' => $chat, 'message_id' => $mid, 'text' => (string)($a['text'] ?? ''), 'parse_mode' => $pm]); break;
+                    case 'edit_caption': tg_api('editMessageCaption', ['chat_id' => $chat, 'message_id' => $mid, 'caption' => (string)($a['text'] ?? ''), 'parse_mode' => $pm]); break;
+                    case 'delete': tg_api('deleteMessage', ['chat_id' => $chat, 'message_id' => $mid]); break;
+                    case 'pin': tg_api('pinChatMessage', ['chat_id' => $chat, 'message_id' => $mid, 'disable_notification' => !empty($a['silent'])]); break;
+                    case 'unpin': tg_api('unpinChatMessage', ['chat_id' => $chat, 'message_id' => $mid]); break;
+                    case 'forward': return tg_sent_public(tg_api('forwardMessage', ['chat_id' => tg_chat($a['to_chat'] ?? ''), 'from_chat_id' => $chat, 'message_id' => $mid]));
+                    case 'copy': return ['ok' => true, 'message_id' => tg_api('copyMessage', ['chat_id' => tg_chat($a['to_chat'] ?? ''), 'from_chat_id' => $chat, 'message_id' => $mid])['message_id'] ?? null];
+                    case 'react': tg_api('setMessageReaction', ['chat_id' => $chat, 'message_id' => $mid, 'reaction' => [['type' => 'emoji', 'emoji' => (string)($a['emoji'] ?? '👍')]]]); break;
+                    default: throw new UserError('Unknown action');
+                }
+                return ['ok' => true];
+            },
+        ],
+        [
+            'name' => 'telegram_api', 'title' => 'Telegram: raw Bot API call', 'access' => 'none', 'readOnly' => false,
+            'enabled' => 'tg_enabled',
+            'description' => 'Calls any Telegram Bot API method directly for full control (https://core.telegram.org/bots/api): e.g. sendPoll, sendLocation, sendDice, getChat, getChatMemberCount, setChatTitle, setChatDescription, createChatInviteLink, banChatMember, setMyCommands, setMyDescription, sendChatAction… params is the JSON body; chat_id defaults to the default chat when the method needs one. logOut/close are blocked. Confirm with the user before destructive or moderation actions.',
+            'schema' => S_obj([
+                'method' => S_str('Bot API method name, e.g. sendPoll.'),
+                'params' => ['type' => 'object', 'description' => 'Method parameters.'],
+            ], ['method']),
+            'run' => function ($a, $ctx) {
+                $params = is_array($a['params'] ?? null) ? $a['params'] : [];
+                if (isset($params['chat_id'])) $params['chat_id'] = tg_chat($params['chat_id']);
+                elseif (preg_match('/^(send|pin|unpin|get[A-Z]\w*Chat|setChat|ban|unban|restrict|promote|export|createChat|editMessage|delete|copy|forward)/', (string)$a['method']) && setting('tg_default_chat', '') !== '') $params['chat_id'] = tg_chat(null);
+                return ['result' => tg_api((string)$a['method'], $params)];
             },
         ],
 

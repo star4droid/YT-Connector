@@ -11,6 +11,7 @@ Install it on any PHP hosting (Hostinger, cPanel, any VPS), connect one or more 
 - 📈 **Analytics**: ready-made summaries (traffic sources, countries, devices, audience, top videos) and custom YouTube Analytics queries
 - 💬 **Comments, playlists, captions, channel branding**: full read and write access
 - 🖼 **Stock media for the AI**: search Pixabay (royalty-free photos, illustrations, vectors and video clips, needs a free API key) and Wikimedia Commons (no key) for thumbnails, B-roll and backgrounds. Results come with a numbered preview grid the AI can look at.
+- ✈️ **Telegram bot**: paste a bot token and the AI can send messages, photos, videos, files and albums to you, your groups or channels. It can also read what you send the bot, publish a video you sent it straight to YouTube, and call any Bot API method.
 - 📓 **AI Notebook**: a journal in the dashboard where the AI keeps daily or weekly summaries, insights, plans and logs, with KPI tiles and charts
 - 🖥 **Dashboard**: a responsive interface in Arabic and English with dark and light themes, including a video editor, resumable uploads, analytics charts and an activity log
 - 🔐 **Security**: Google secrets are encrypted at rest (AES-256-GCM), tokens are hashed, the admin login is rate-limited, sessions can be revoked, and private folders are blocked
@@ -150,6 +151,13 @@ Dashboard → **Channels → Add channel**:
 | `pixabay_search` | Pixabay images or videos (filters: type, orientation, category, colors, min size, editor's choice…), URLs in every size plus a numbered preview grid. Shown only when a key is saved and the source is enabled | – |
 | `wikimedia_search` | Wikimedia Commons images, videos or audio, with license, author, a ready attribution line and an optional public-domain/CC0-only filter, plus a preview grid | – |
 | `preview_image` | Lets the AI look closely at one image from Pixabay, Wikimedia or YouTube | – |
+| `telegram_chats` | Bot info, default chat and known chats (refreshes from recent updates) | – |
+| `telegram_send_message` | Text with HTML/Markdown, inline buttons, silent / protected / reply options; long texts are split | – |
+| `telegram_send_file` / `telegram_send_album` | Photo, video, document, audio, GIF, voice, video note, sticker, or a 2–10 item album. Source can be a URL, `file_id`, a file the AI sent (`upload_id`) or base64 | – |
+| `telegram_file_start` | Lets the AI send a file it has (≤ 50 MB) via `PUT upload.php`; deleted from the server after sending | – |
+| `telegram_read_messages` / `telegram_get_file` | Read incoming messages and button presses; view a received image or text file, or upload a received video to YouTube | – |
+| `telegram_manage_message` | Edit, delete, pin, unpin, forward, copy, react | – |
+| `telegram_api` | Any Bot API method (polls, chat settings, invite links, commands…). `logOut` / `close` are blocked | – |
 | `notebook_write` / `notebook_read` / `notebook_update` | The AI Notebook | – |
 | `record_snapshot` | Stores today's subscriber, view and video counts for the growth charts | read |
 
@@ -186,6 +194,20 @@ Dashboard → **Media sources**:
 - You can turn either source off. Disabled sources are hidden from Claude.
 - Each search returns a **numbered preview grid** (built with PHP GD), so the AI can see the candidates and choose one. It then passes the URL to `set_thumbnail` (`image_url`) or `upload_video` (`source_url`).
 - The page includes a search box so you can see exactly what Claude gets.
+
+## Telegram bot
+
+Dashboard → **Telegram**:
+
+1. Open [@BotFather](https://t.me/BotFather), send `/newbot` and copy the token.
+2. Paste the token and save. It is verified with `getMe`, then stored encrypted. The AI never sees it.
+3. Send `/start` to your bot, or add it to a group, or make it an admin of a channel. Then click **Find chats**.
+4. Pick a **default chat**. Optionally, restrict the bot to an **allow-list** of chats.
+
+Notes:
+- Bots can send files up to **50 MB** and download files up to **20 MB** (Telegram limits).
+- Reading messages uses `getUpdates`, which doesn't work while the bot has a webhook set. Use a dedicated bot, or remove the webhook.
+- Files the AI sends from its sandbox are staged on your server and deleted right after Telegram receives them. If a send fails, the file is kept for 6 hours so it can be retried.
 
 ## AI Notebook
 
@@ -246,7 +268,7 @@ The notebook is optional. The AI writes to it when you ask (for example *"keep a
 ├── well-known.php     /.well-known/oauth-* discovery
 ├── google.php         Google OAuth helper (gets refresh tokens)
 ├── drop.php           One-time public upload page
-├── upload.php         Raw-bytes upload endpoint for files the AI sends (token auth)
+├── upload.php         Raw-bytes upload endpoint for files the AI sends to YouTube or Telegram (token auth)
 ├── lib/
 │   ├── bootstrap.php  config, session, settings, auth helpers
 │   ├── db.php         SQLite / MySQL layer + schema
@@ -255,6 +277,7 @@ The notebook is optional. The AI writes to it when you ask (for example *"keep a
 │   ├── uploads.php    staged / resumable upload jobs
 │   ├── notebook.php   AI Notebook
 │   ├── media.php      Pixabay & Wikimedia Commons search, preview grid
+│   ├── telegram.php   Telegram Bot API (send, read, files, albums, raw calls)
 │   ├── tools.php      MCP tool catalog (shared with the dashboard)
 │   ├── oauth.php      OAuth server helpers
 │   └── i18n.php       translations for server pages
